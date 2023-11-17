@@ -23,61 +23,14 @@ variable "prefix" {
   description = "Resource name prefix"
 }
 
-# variable "storage_account_replication_type" {
-#   type        = string
-#   description = "storage account sku (replication type part)"
-#   validation {
-#     condition = contains(
-#       [
-#         "LRS",
-#         "ZRS",
-#         "GRS",
-#         "RAGRS",
-#         "GZRS",
-#         "RAGZRS",
-#       ],
-#       var.storage_account_replication_type,
-#     )
-#     error_message = "Invalid storage account replication type specified"
-#   }
-# }
-
-# variable "storage_account_tier" {
-#   type        = string
-#   description = "storage account sku (tier part)"
-#   validation {
-#     condition = contains(
-#       [
-#         "Standard",
-#         "Premium",
-#       ],
-#       var.storage_account_tier,
-#     )
-#     error_message = "Invalid storage account tier specified"
-#   }
-# }
-
-# variable "storage_account_kind" {
-#   type        = string
-#   description = "storage account kind"
-#   validation {
-#     condition = contains(
-#       [
-#         "BlobStorage",
-#         "BlockBlobStorage",
-#         "FileStorage",
-#         "Storage",
-#         "StorageV2",
-#       ],
-#       var.storage_account_kind,
-#     )
-#     error_message = "Invalid storage account kind specified"
-#   }
-# }
-
 variable "storage_account_public_access_enabled" {
   type        = bool
   description = "Whether public access is enabled for the storage account?"
+}
+
+variable "enable_pe" {
+  type        = bool
+  description = "Whether PE is enabled"
 }
 
 locals {
@@ -125,6 +78,8 @@ locals {
     ]
     )
   }
+
+  pe_list = var.enable_pe ? keys(local.sa_list) : toset([])
 }
 
 resource "azurerm_resource_group" "test" {
@@ -258,7 +213,7 @@ data "azurerm_storage_account_blob_container_sas" "test" {
   content_type = "text/html"
 }
 
-// This null resource enables the static web site and upload the index.html, via data plane APIs
+# This null resource enables the static web site and upload the index.html, via data plane APIs
 resource "null_resource" "setup_storage_account_static_web" {
   for_each = local.sa_list
   provisioner "local-exec" {
@@ -269,6 +224,59 @@ resource "null_resource" "setup_storage_account_static_web" {
     command = "curl -X PUT -T index.html -H 'x-ms-blob-type: BlockBlob' -H 'x-ms-blob-content-type: text/html' '${jsondecode(azapi_resource.storage_account[each.key].output).properties.primaryEndpoints.blob}${azapi_resource.storage_container[each.key].name}/index.html${data.azurerm_storage_account_blob_container_sas.test[each.key].sas}'"
   }
 }
+
+# PE related resources
+resource "azurerm_virtual_network" "test" {
+  count               = var.enable_pe ? 1 : 0
+  name                = "vnet"
+  address_space       = ["10.0.0.0/16"]
+  location            = azurerm_resource_group.test.location
+  resource_group_name = azurerm_resource_group.test.name
+}
+
+resource "azurerm_subnet" "test" {
+  count                = var.enable_pe ? 1 : 0
+  name                 = "subnet"
+  resource_group_name  = azurerm_resource_group.test.name
+  virtual_network_name = azurerm_virtual_network.test[0].name
+  address_prefixes     = ["10.0.2.0/24"]
+}
+
+resource "azurerm_private_dns_zone" "test" {
+  count               = var.enable_pe ? 1 : 0
+  name                = "privatelink.blob.core.windows.net"
+  resource_group_name = azurerm_resource_group.test.name
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "test" {
+  count                 = var.enable_pe ? 1 : 0
+  name                  = "example-link"
+  resource_group_name   = azurerm_resource_group.test.name
+  private_dns_zone_name = azurerm_private_dns_zone.test[0].name
+  virtual_network_id    = azurerm_virtual_network.test[0].id
+}
+
+resource "azurerm_private_endpoint" "test" {
+  for_each            = local.pe_list
+  name                = each.value
+  location            = azurerm_resource_group.test.location
+  resource_group_name = azurerm_resource_group.test.name
+  subnet_id           = azurerm_subnet.test[0].id
+
+  private_service_connection {
+    name                           = each.value
+    private_connection_resource_id = azapi_resource.storage_account[each.value].id
+    subresource_names              = ["blob"]
+    is_manual_connection           = false
+  }
+
+  private_dns_zone_group {
+    name                 = "example-dns-zone-group"
+    private_dns_zone_ids = [azurerm_private_dns_zone.test[0].id]
+  }
+}
+
+# Outputs
 
 output "sa_list" {
   value = keys(local.sa_list)

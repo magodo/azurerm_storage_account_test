@@ -1,11 +1,11 @@
-prefix = "manysa"
+prefix = "satest2"
 sa_list = [
-  "manysabpremiumlrs",
-  "manysabpremiumzrs",
-  "manysasstandardgrs",
-  "manysasstandardgzrs",
-  "manysasstandardlrs",
-  "manysasstandardragrs",
-  "manysasstandardragzrs",
-  "manysasstandardzrs",
+  "satest2bpremiumlrs",
+  "satest2bpremiumzrs",
+  "satest2sstandardgrs",
+  "satest2sstandardgzrs",
+  "satest2sstandardlrs",
+  "satest2sstandardragrs",
+  "satest2sstandardragzrs",
+  "satest2sstandardzrs",
 ]

@@ -76,6 +76,46 @@ data "azurerm_storage_account_sas" "test" {
   }
 }
 
+data "azurerm_storage_account_blob_container_sas" "blob" {
+  connection_string = "DefaultEndpointsProtocol=https;AccountName=${data.azapi_resource.storage_account.name};AccountKey=${jsondecode(data.azapi_resource_action.list_keys.output).keys[0].value};EndpointSuffix=core.windows.net"
+  container_name    = data.azapi_resource.storage_container.name
+  https_only        = true
+
+  start  = "2023-11-14"
+  expiry = "2025-11-14"
+
+  permissions {
+    create = false
+    read   = true
+    add    = false
+    write  = false
+    delete = false
+    list   = false
+  }
+
+  content_type = "text/html"
+}
+
+data "azurerm_storage_account_blob_container_sas" "prop" {
+  connection_string = "DefaultEndpointsProtocol=https;AccountName=${data.azapi_resource.storage_account.name};AccountKey=${jsondecode(data.azapi_resource_action.list_keys.output).keys[0].value};EndpointSuffix=core.windows.net"
+  container_name    = data.azapi_resource.storage_container.name
+  https_only        = true
+
+  start  = "2023-11-14"
+  expiry = "2025-11-14"
+
+  permissions {
+    create = false
+    read   = true
+    add    = false
+    write  = false
+    delete = false
+    list   = true
+  }
+
+  content_type = "application/xml"
+}
+
 locals {
   blob_endpoint = jsondecode(data.azapi_resource.storage_account.output).properties.primaryEndpoints.blob
   web_endpoint  = jsondecode(data.azapi_resource.storage_account.output).properties.primaryEndpoints.web
@@ -94,6 +134,28 @@ check "blob_service_property" {
   assert {
     condition     = strcontains(data.http.svc.response_body, "<StaticWebsite><Enabled>true")
     error_message = "${var.storage_account_name}: web not enabled (${regex("<StaticWebsite>.*</StaticWebsite>", data.http.svc.response_body)})"
+  }
+}
+
+check "container_property" {
+  data "http" "container" {
+    url = "${local.blob_endpoint}${data.azapi_resource.storage_container.name}${data.azurerm_storage_account_blob_container_sas.prop.sas}&restype=container&comp=list"
+  }
+
+  assert {
+    condition     = data.http.container.status_code == 200
+    error_message = "${var.storage_account_name}: failed to access the container properties (status_code=${data.http.container.status_code})"
+  }
+}
+
+check "container_blob" {
+  data "http" "blob" {
+    url = "${local.blob_endpoint}${data.azapi_resource.storage_container.name}/index.html${data.azurerm_storage_account_blob_container_sas.blob.sas}"
+  }
+
+  assert {
+    condition     = data.http.blob.status_code == 200
+    error_message = "${var.storage_account_name}: failed to access the container blob (status_code=${data.http.blob.status_code})"
   }
 }
 
