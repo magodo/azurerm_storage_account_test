@@ -269,3 +269,11 @@ resource "null_resource" "setup_storage_account_static_web" {
     command = "curl -X PUT -T index.html -H 'x-ms-blob-type: BlockBlob' -H 'x-ms-blob-content-type: text/html' '${jsondecode(azapi_resource.storage_account[each.key].output).properties.primaryEndpoints.blob}${azapi_resource.storage_container[each.key].name}/index.html${data.azurerm_storage_account_blob_container_sas.test[each.key].sas}'"
   }
 }
+
+output "sa_list" {
+  value = keys(local.sa_list)
+}
+
+output "prefix" {
+  value = var.prefix
+}
